@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="黒板">
+<defs><linearGradient id="board" x2=".8" y2="1"><stop stop-color="#1f5145"/><stop offset="1" stop-color="#0b3029"/></linearGradient></defs>
+<rect width="512" height="512" rx="106" fill="#0a2924"/>
+<rect x="12" y="12" width="488" height="488" rx="97" fill="url(#board)" stroke="#527461" stroke-opacity=".55" stroke-width="2"/>
+<path d="M106 111H406V355H106Z" fill="none" stroke="#efe9d3" stroke-width="11" stroke-linejoin="round"/>
+<path d="M96 365H418" stroke="#d7b56d" stroke-width="13" stroke-linecap="round"/>
+<path d="M145 171H322M145 212H270M145 253H226" fill="none" stroke="#e8e4ce" stroke-width="9" stroke-opacity=".63" stroke-linecap="round"/>
+<path d="M290 338L373 237Q377 232 382 236L399 251Q403 255 399 260L316 361L287 369Z" fill="#eedda9" stroke="#0e332a" stroke-width="10" stroke-linejoin="round"/>
+<path d="M300 343L320 360M373 244L390 258" stroke="#a38b56" stroke-width="4"/>
+<path d="M152 414H254" stroke="#d4cbb0" stroke-width="4" stroke-opacity=".28" stroke-linecap="round"/>
+</svg>

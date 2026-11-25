@@ -1,0 +1,8 @@
+node_modules/
+.openai/
+dist/vendor/ocr/
+dist/assets/Yomogi-Regular.ttf
+*.zip
+.DS_Store
+
+out/
