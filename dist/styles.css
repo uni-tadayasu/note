@@ -125,3 +125,29 @@ body.board-only .board,body.board-only .text-layer{touch-action:none;user-select
 body.board-only .board[data-template=dots] .page-design,body.board-only .board[data-template=grid] .page-design{background-size:calc(var(--board-unit,1px)*48) calc(var(--board-unit,1px)*48)}
 body.board-only .board[data-template=lines] .page-design{background-size:100% calc(var(--board-unit,1px)*72)}
 body.board-only .text-block{-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
+body.board-only .board-handle.save-error{color:#ffd0b9;border-color:#e59c7e;background:#51372de8;opacity:1}
+
+/* Keep the eight quick actions and tool trays inside tablet / short viewports. */
+@media(min-width:621px) and (max-width:1100px){
+body.board-only .app-shell.tools-open .board-controls{display:grid!important;grid-template-columns:repeat(8,minmax(0,1fr));width:calc(100vw - 32px);max-width:940px}
+body.board-only .board-controls button{flex-direction:column;gap:3px;min-width:0;min-height:46px;padding:4px 2px;font-size:12px;line-height:1.15}
+body.board-only .board-controls .icon{width:18px;height:18px}
+body.board-only .app-shell.tools-open .toolbar{max-width:calc(100vw - 24px);bottom:calc(64px + env(safe-area-inset-bottom));flex-wrap:wrap}
+body.board-only .app-shell.tools-open .page-footer{bottom:calc(176px + env(safe-area-inset-bottom))}
+body.board-only .inspector{top:90px;bottom:calc(190px + env(safe-area-inset-bottom))}
+}
+@media(max-width:620px){
+body.board-only .app-dialog .dialog-actions{flex-wrap:wrap}
+body.board-only select{font-size:16px}
+}
+@media(max-height:540px) and (min-width:621px){
+body.board-only .app-shell.tools-open .board-controls{top:8px;padding:4px 7px}
+body.board-only .board-controls button{min-height:40px;padding:3px 2px;font-size:11px}
+body.board-only .app-shell.tools-open .toolbar{bottom:10px;max-width:calc(100vw - 86px);min-height:44px;max-height:54px;flex-wrap:nowrap;justify-content:flex-start;padding:5px 8px;gap:5px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x}
+body.board-only .toolbar .history-tools,body.board-only .toolbar .drawing-tools{flex-shrink:0}
+body.board-only .app-shell.tools-open .page-footer{left:12px;top:68px;bottom:auto;max-width:calc(100vw - 324px);height:34px;min-height:34px;padding:3px 7px;gap:5px}
+body.board-only .page-footer .page-tabs{max-width:110px}
+body.board-only .page-footer #pageCount{display:none}
+body.board-only .page-footer .page-navigation{gap:5px}
+body.board-only .inspector{top:68px;bottom:70px;right:12px;width:290px}
+}

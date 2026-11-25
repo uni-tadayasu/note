@@ -70,7 +70,9 @@ npm run build
 
 ### GitHub Pages
 
-`.github/workflows/pages.yml` はmainへのpushでテスト・ビルド・公開を行います。Pull Requestではテストとビルドを行います。GitHubの Settings → Pages → Build and deployment → Source を **GitHub Actions** に設定してください。ワークフロー内の初回有効化が権限上許可されない場合は、管理者によるこの設定が必要です。
+`.github/workflows/pages.yml` はmainへのpushでテスト・ビルド・公開を行います。Pull Requestではテストとビルドを行います。このリポジトリは自動公開済みです。既存のブランチ方式のPages公開が有効な場合も、その処理の完了を待ってからアプリの成果物を公開し、READMEだけのサイトに上書きされない順序にしています。
+
+新しいリポジトリへ移す場合は、GitHubの Settings → Pages → Build and deployment → Source に **GitHub Actions** を選択できます。初回のPages有効化が権限上許可されない場合は、管理者による設定が必要です。
 
 独自ドメインに変更する場合は、`index.html` のcanonical・OGP URLと`robots.txt`・`sitemap.xml`も更新してください。ノートはサイトのオリジンごとに保存されるため、変更前にバックアップしてください。
 

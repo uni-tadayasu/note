@@ -12,6 +12,8 @@ let generation = 0;
 let busy = false;
 let reportProgress;
 let idleTimer;
+const imageLayouts = new WeakMap();
+let recognitionProgress = { start: 0.4, span: 0.58 };
 
 function failure(message, code) {
   const error = new Error(message);
@@ -103,12 +105,10 @@ async function nativeRecognition(strokes, language, signal) {
   }
 }
 
-/** Crop dark ink, keep a white border, and normalize resolution for OCR. */
-export function prepareRecognitionImage(source) {
-  if (!source || !source.width || !source.height) throw failure('認識する手書き文字がありません。', 'EMPTY');
-  const read = source.getContext('2d', { willReadFrequently: true });
-  const { width, height } = source;
-  const pixels = read.getImageData(0, 0, width, height).data;
+/** Inspect ink density without assuming that a small crop is a page of text. */
+export function analyzeRecognitionPixels({ width, height, data: pixels }) {
+  if (!width || !height || !pixels || pixels.length < width * height * 4) throw failure('認識する手書き文字がありません。', 'EMPTY');
+  const rows = new Uint32Array(height);
   let x0 = width, y0 = height, x1 = -1, y1 = -1;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -116,6 +116,7 @@ export function prepareRecognitionImage(source) {
       const alpha = pixels[offset + 3] / 255;
       const brightness = (pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722) * alpha + 255 * (1 - alpha);
       if (brightness < 195) {
+        rows[y] += 1;
         x0 = Math.min(x0, x); y0 = Math.min(y0, y);
         x1 = Math.max(x1, x); y1 = Math.max(y1, y);
       }
@@ -124,23 +125,127 @@ export function prepareRecognitionImage(source) {
   if (x1 < x0 || y1 < y0) throw failure('認識する文字が見つかりません。文字を少し大きめに書いてください。', 'EMPTY');
   const contentWidth = x1 - x0 + 1;
   const contentHeight = y1 - y0 + 1;
+  const aspect = contentWidth / contentHeight;
+  const mergeGap = Math.max(2, Math.min(12, Math.round(contentHeight * 0.055)));
+  const rowBands = [];
+  let lastInkRow = -Infinity;
+  for (let y = y0; y <= y1; y += 1) {
+    if (!rows[y]) continue;
+    if (y - lastInkRow > mergeGap + 1) rowBands.push({ start: y, end: y, pixels: 0 });
+    const band = rowBands[rowBands.length - 1];
+    band.end = y;
+    band.pixels += rows[y];
+    lastInkRow = y;
+  }
+  const bands = rowBands.length;
+  // A compact crop can contain disconnected strokes (e.g. 川). Word-mode
+  // verification also covers narrow Latin words such as HI without forcing
+  // their answer to a single character.
+  // Multiple full-height text rows must remain a paragraph even when their
+  // overall crop is square or portrait. The exception only covers a few thin,
+  // dense horizontal strokes, which can form one disconnected glyph (e.g. 三).
+  const thinHorizontalGlyph = bands > 1 && bands <= 3 && rowBands.every(band => {
+    const height = band.end - band.start + 1;
+    return height <= Math.min(12, contentHeight * 0.16) && band.pixels / (contentWidth * height) > 0.45;
+  });
+  const compact = aspect <= 1.65 && (bands === 1 || thinHorizontalGlyph);
+  const kind = compact ? 'compact' : bands === 1 ? 'line' : 'block';
   const longest = Math.max(contentWidth, contentHeight);
-  const scale = Math.min(3, 1800 / longest, Math.max(1, 900 / longest));
+  const scale = kind === 'block'
+    ? Math.min(3, 1800 / longest, Math.max(1, 900 / longest))
+    : Math.min(3, 120 / contentHeight, 1800 / contentWidth);
+  return { x: x0, y: y0, width: contentWidth, height: contentHeight, aspect, kind, bands, scale, border: 32 };
+}
+
+/** Crop dark ink and normalize glyph height instead of enlarging one glyph to a full page. */
+export function prepareRecognitionImage(source) {
+  if (!source || !source.width || !source.height) throw failure('認識する手書き文字がありません。', 'EMPTY');
+  const read = source.getContext('2d', { willReadFrequently: true });
+  const layout = analyzeRecognitionPixels(read.getImageData(0, 0, source.width, source.height));
+  const { x, y, width, height, scale, border } = layout;
   const output = document.createElement('canvas');
-  output.width = Math.round(contentWidth * scale) + 64;
-  output.height = Math.round(contentHeight * scale) + 64;
+  output.width = Math.max(1, Math.round(width * scale)) + border * 2;
+  output.height = Math.max(1, Math.round(height * scale)) + border * 2;
   const context = output.getContext('2d');
   context.fillStyle = '#fff';
   context.fillRect(0, 0, output.width, output.height);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(source, x0, y0, contentWidth, contentHeight, 32, 32, output.width - 64, output.height - 64);
+  context.drawImage(source, x, y, width, height, border, border, output.width - border * 2, output.height - border * 2);
+  imageLayouts.set(output, layout);
   return output;
+}
+
+const japaneseText = text => /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text);
+function candidateScore(candidate, layout, language) {
+  const text = candidate.text.replace(/\s/g, '');
+  if (!text) return -Infinity;
+  let score = candidate.confidence;
+  // A wide horizontal mark is plausible in a wide crop, but cannot explain
+  // a tall ink shape. This check never substitutes a particular letter.
+  if (/^[-—–―ー一_]+$/u.test(text) && layout.aspect < 2.5) score -= 45;
+  if (!language.startsWith('en') && japaneseText(text)) score += 4;
+  return score;
+}
+
+/** Keep genuine model confidence; close Japanese alternatives retain priority. */
+export function rankRecognitionCandidates(candidates, layout, language = 'ja') {
+  const unique = new Map();
+  for (const candidate of candidates) {
+    const text = String(candidate.text || '').replace(/\r\n?/g, '\n').trim();
+    if (!text) continue;
+    const confidence = Number.isFinite(candidate.confidence) ? candidate.confidence : 0;
+    if (!unique.has(text) || unique.get(text).confidence < confidence) unique.set(text, { ...candidate, text, confidence });
+  }
+  return [...unique.values()].sort((a, b) => candidateScore(b, layout, language) - candidateScore(a, layout, language));
+}
+
+/** A bounded segmentation retry, with one language-order retry for uncertain small crops. */
+export async function recognizeImageCandidates(worker, image, { language = 'ja', signal, layout = imageLayouts.get(image), onLanguageChange } = {}) {
+  layout ||= { kind: 'block', aspect: 2 };
+  const candidates = [];
+  // Word mode first preserves narrow multi-letter words such as HI; a crop's
+  // aspect ratio alone cannot establish that it contains only one character.
+  const modes = layout.kind === 'compact' ? ['8', '10'] : layout.kind === 'line' ? ['7', '13'] : ['6', '11'];
+  const deadline = Date.now() + 60000;
+  async function attempt(mode) {
+    checkAbort(signal);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw failure('文字認識に時間がかかっています。短い文章に分けてお試しください。', 'TIMEOUT');
+    recognitionProgress = { start: 0.4 + candidates.length * 0.17, span: 0.16 };
+    await bounded(worker.setParameters({ tessedit_pageseg_mode: mode, preserve_interword_spaces: '0', user_defined_dpi: '300' }), signal, Math.min(5000, remaining), '文字認識の設定に時間がかかっています。');
+    const result = await bounded(worker.recognize(image, {}, { text: true }), signal, Math.max(1, deadline - Date.now()), '文字認識に時間がかかっています。短い文章に分けてお試しください。');
+    checkAbort(signal);
+    candidates.push({ text: result.data?.text || '', confidence: Number.isFinite(result.data?.confidence) ? result.data.confidence : 0, mode });
+    return rankRecognitionCandidates(candidates, layout, language)[0];
+  }
+  let best = await attempt(modes[0]);
+  const target = layout.kind === 'compact' ? 90 : layout.kind === 'line' ? 75 : 60;
+  if (!best || candidateScore(best, layout, language) < target) best = await attempt(modes[1]);
+  // Preserve the Japanese-first result when it is already confident. With a
+  // small uncertain drawing, both installed models get one additional pass
+  // in the reverse order; no network service or character-specific guess is used.
+  if (!language.startsWith('en') && layout.kind === 'compact' &&
+      (!best || candidateScore(best, layout, language) < 85)) {
+    checkAbort(signal);
+    progress('小さな文字の候補を確認しています…', 0.74);
+    await bounded(worker.reinitialize('eng+jpn', 1), signal, Math.max(1, deadline - Date.now()), '文字認識の準備に時間がかかっています。');
+    onLanguageChange?.('eng+jpn');
+    best = await attempt('8');
+  }
+  const ranked = rankRecognitionCandidates(candidates, layout, language);
+  if (!ranked.length) throw failure('文字を読み取れませんでした。文字を大きめに、間隔を空けて書いてから再試行してください。', 'NO_TEXT');
+  return { ...ranked[0], alternatives: ranked.slice(1, 4).map(item => item.text) };
 }
 
 async function getEngine(language, signal) {
   const languages = language?.startsWith('en') ? 'eng' : 'jpn+eng';
   if (engine && engineLanguage === languages) return engine;
+  if (engine) {
+    await bounded(engine.reinitialize(languages, 1), signal, 90000, '文字認識の準備に時間がかかっています。通信を確認してください。');
+    engineLanguage = languages;
+    return engine;
+  }
   if (engine || enginePromise) await releaseRecognitionResources();
   const stamp = generation;
   // The pinned browser ESM build exposes the Tesseract API as its default
@@ -161,7 +266,7 @@ async function getEngine(language, signal) {
     gzip: true,
     logger(message) {
       const value = Number(message.progress) || 0;
-      if (message.status === 'recognizing text') progress('手書き文字を認識しています…', 0.4 + value * 0.58);
+      if (message.status === 'recognizing text') progress('手書き文字を認識しています…', recognitionProgress.start + value * recognitionProgress.span);
       else if (message.status === 'loading language traineddata') progress('日本語・英語の辞書を準備しています…', 0.15 + value * 0.18);
       else progress('文字認識エンジンを準備しています…', 0.08 + value * 0.08);
     },
@@ -209,15 +314,14 @@ export async function recognizeHandwriting({ canvas, strokes = [], language = 'j
     const worker = await getEngine(language, signal);
     checkAbort(signal);
     phase = 'recognize';
-    const result = await bounded(worker.recognize(prepared, {}, { text: true }), signal, 60000, '文字認識に時間がかかっています。短い文章に分けてお試しください。');
+    const result = await recognizeImageCandidates(worker, prepared, { language, signal, onLanguageChange: value => { engineLanguage = value; } });
     checkAbort(signal);
-    const text = (result.data?.text || '').replace(/\r\n?/g, '\n').trim();
-    if (!text) throw failure('文字を読み取れませんでした。文字を大きめに、間隔を空けて書いてから再試行してください。', 'NO_TEXT');
     progress('認識が完了しました', 1);
     return {
-      text,
-      confidence: Number.isFinite(result.data.confidence) ? Math.round(result.data.confidence) : null,
+      text: result.text,
+      confidence: Math.round(result.confidence),
       method: 'local-ocr',
+      alternatives: result.alternatives,
       warning: '手書きの形や文字の間隔により誤認識する場合があります。結果を確認・修正してから挿入してください。',
     };
   } catch (error) {
