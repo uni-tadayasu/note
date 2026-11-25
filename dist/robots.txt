@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /note/
+Sitemap: https://uni-tadayasu.github.io/note/sitemap.xml
