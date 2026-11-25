@@ -5,7 +5,7 @@ import { NoteStore, validateBackup, backupPayload } from '../dist/storage.js';
 const note = () => ({
   id: 'note-1', title: 'わたしの黒板', folder: 'ideas', starred: true, deleted: false,
   created: '2026-11-25T09:00:00.000Z', updated: '2026-11-25T10:00:00.000Z', pageIndex: 0,
-  pages: [{ id: 'page-1', template: 'cornell', theme: 'green',
+  pages: [{ id: 'page-1', width: 1400, height: 900, template: 'cornell', theme: 'green',
     strokes: [{ id: 'stroke-1', tool: 'pen', color: '#f4f2df', size: 4.25, pressure: true, points: [{ x: 0, y: 900, p: 0.05, t: 0 }, { x: 1400, y: 0, p: 1, t: 48.125 }] }],
     texts: [{ id: 'text-1', text: '葛西寿史のノート。\n<script>これは文章</script> 😀', reading: 'かさいただやすのノート。', x: 100, y: 120, width: 650, size: 38, color: '#ffcc77', font: 'chalk' }],
   }],
@@ -15,6 +15,7 @@ const settings = () => ({
   dictionary: [{ word: '葛西', reading: 'かさい' }],
   speech: { voiceURI: 'ja-JP-local', rate: 0.9, pitch: 1, volume: 0.7, loop: false, allPages: true }, penOnly: true,
   color: '#a4c5d8', size: 12, tool: 'select', theme: 'blue', template: 'cornell', lastNoteId: 'note-1',
+  boardLayoutVersion: 2,
 });
 const payload = () => ({ format: 'kokuban-notes', version: 1, notes: [note()], settings: settings() });
 
@@ -47,7 +48,7 @@ test('unknown data is discarded and prototype/accessor attacks are rejected', ()
 test('selected note and drawing preferences survive backup and receive valid defaults', () => {
   const data = payload();
   const restored = validateBackup(backupPayload(data.notes, data.settings)).settings;
-  for (const key of ['color', 'size', 'tool', 'theme', 'template', 'lastNoteId']) assert.equal(restored[key], data.settings[key]);
+  for (const key of ['color', 'size', 'tool', 'theme', 'template', 'lastNoteId', 'boardLayoutVersion']) assert.equal(restored[key], data.settings[key]);
   const minimal = payload(); minimal.settings = {};
   const defaults = validateBackup(minimal).settings;
   assert.equal(defaults.color, '#f4f2df');
@@ -56,14 +57,63 @@ test('selected note and drawing preferences survive backup and receive valid def
   assert.equal(defaults.theme, 'green');
   assert.equal(defaults.template, 'dots');
   assert.equal(defaults.lastNoteId, '');
+  assert.equal(defaults.boardLayoutVersion, 0);
   for (const tool of ['pen', 'marker', 'eraser', 'text', 'select', 'line', 'rect', 'ellipse']) {
     const example = payload(); example.settings.tool = tool;
     assert.equal(validateBackup(example).settings.tool, tool);
   }
-  for (const [key, value] of [['size', 0], ['size', 25], ['tool', 'unknown'], ['lastNoteId', 'bad id']]) {
+  for (const [key, value] of [['size', 0], ['size', 25], ['tool', 'unknown'], ['lastNoteId', 'bad id'], ['boardLayoutVersion', -1], ['boardLayoutVersion', 11], ['boardLayoutVersion', 1.5]]) {
     const example = payload(); example.settings[key] = value;
     assert.throws(() => validateBackup(example), { code: 'INVALID_BACKUP' });
   }
+});
+
+test('legacy pages retain their fixed coordinate system and all user data', () => {
+  const data = payload();
+  delete data.notes[0].pages[0].width;
+  delete data.notes[0].pages[0].height;
+  delete data.settings.boardLayoutVersion;
+  const restored = validateBackup(data);
+  const page = restored.notes[0].pages[0];
+  assert.equal(page.width, 1400);
+  assert.equal(page.height, 900);
+  assert.deepEqual(page.strokes, data.notes[0].pages[0].strokes);
+  assert.deepEqual(page.texts, data.notes[0].pages[0].texts);
+  assert.equal(restored.settings.boardLayoutVersion, 0);
+  assert.equal(restored.notes.length, data.notes.length);
+});
+
+test('viewport pages use their own dimensions without clipping valid large coordinates', () => {
+  const data = payload();
+  const page = data.notes[0].pages[0];
+  page.width = 3840; page.height = 2160;
+  page.strokes[0].points = [{ x: 3840, y: 2160, p: 1, t: 0 }, { x: 2000.125, y: 1000.5, p: 0.8, t: 24 }];
+  Object.assign(page.texts[0], { x: 1900, y: 1700, width: 1850 });
+  const restored = validateBackup(backupPayload(data.notes, data.settings));
+  assert.deepEqual(restored.notes[0].pages[0], page);
+  for (const mutate of [
+    p => { p.width = 63; }, p => { p.height = 16385; },
+    p => { p.width = Infinity; }, p => { p.height = NaN; },
+    p => { p.strokes[0].points[0].x = 3841; },
+    p => { p.strokes[0].points[0].y = 2161; },
+    p => { p.texts[0].x = 3841; },
+    p => { p.texts[0].y = 2161; },
+    p => { p.texts[0].width = 3841; },
+  ]) {
+    const bad = structuredClone(data); mutate(bad.notes[0].pages[0]);
+    assert.throws(() => validateBackup(bad), { code: 'INVALID_BACKUP' });
+  }
+});
+
+test('small viewport pages enforce their actual ink and text bounds', () => {
+  const data = payload();
+  const page = data.notes[0].pages[0];
+  page.width = 390; page.height = 844;
+  page.strokes[0].points = [{ x: 390, y: 844, p: 0.5, t: 0 }];
+  Object.assign(page.texts[0], { x: 30, y: 80, width: 340 });
+  assert.deepEqual(validateBackup(data).notes[0].pages[0], page);
+  page.strokes[0].points[0].x = 500;
+  assert.throws(() => validateBackup(data), { code: 'INVALID_BACKUP' });
 });
 
 test('invalid geometry, schemas, enums and duplicate identifiers are rejected', () => {

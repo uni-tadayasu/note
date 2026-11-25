@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#173e35">
   <meta name="description" content="黒板とチョークの心地よさを、いつものブラウザに。PC・スマートフォン・タブレットで滑らかな手書き、文字変換、読み上げができる高機能ノート。">
   <meta property="og:type" content="website">
@@ -29,8 +29,18 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="board-only">
   <div class="app-shell" id="app">
+    <div class="board-controls" id="boardControls" role="toolbar" aria-label="黒板の道具">
+      <button id="quickNotes" aria-label="ノート一覧を開く"><i data-icon="notebook"></i><span>ノート</span></button>
+      <button id="quickNew"><i data-icon="plus"></i><span>新しいノート</span></button>
+      <button id="quickRecognize"><i data-icon="sparkles"></i><span>文字に変換</span></button>
+      <button id="quickSpeech" aria-expanded="false"><i data-icon="volume"></i><span>読み上げ</span></button>
+      <button id="quickExport"><i data-icon="export"></i><span>書き出す</span></button>
+      <button id="quickNoteMenu" aria-label="ノートの操作"><i data-icon="more"></i><span>ノート操作</span></button>
+      <button id="quickSettings"><i data-icon="settings"></i><span>設定</span></button>
+      <button id="quickHelp" aria-label="使い方"><i data-icon="help"></i><span>使い方</span></button>
+    </div>
     <aside class="sidebar" id="sidebar" aria-label="ノートライブラリ">
       <a href="./" class="brand" aria-label="黒板 ホーム"><img src="assets/icon.svg" alt="" width="42" height="42"><span><strong>黒板</strong><small>KOKUBAN</small></span></a>
       <button class="new-note primary" id="newNote"><i data-icon="plus"></i>新しいノート</button>
@@ -71,7 +81,7 @@
         <div class="color-group" id="colors" aria-label="チョークの色"></div>
         <div class="toolbar-divider responsive-divider"></div>
         <button class="size-button" id="sizeBtn" aria-label="線の太さを調整"><span class="size-dot"></span><span id="sizeLabel">3</span><i data-icon="chevron"></i></button>
-        <div class="toolbar-spacer"></div><button class="tool-button" id="pageSettingsBtn" aria-label="黒板の設定" title="黒板の設定"><i data-icon="sliders"></i></button><button class="tool-button" id="focusBtn" aria-label="集中モード" title="集中モード (F)"><i data-icon="expand"></i></button>
+        <div class="toolbar-spacer"></div><button class="tool-button" id="pageSettingsBtn" aria-label="黒板の設定" title="黒板の設定"><i data-icon="sliders"></i></button><button class="tool-button" id="focusBtn" aria-label="道具を閉じる" title="道具を閉じる (F)"><i data-icon="close"></i></button>
       </section>
       <div class="work-area">
         <section class="canvas-zone" id="canvasZone" aria-label="黒板の筆記面">
@@ -82,6 +92,7 @@
       </div>
       <footer class="page-footer"><div class="page-navigation"><i data-icon="pages"></i><div id="pageTabs" class="page-tabs" aria-label="ノートのページ"></div><button class="add-page" id="addPage" title="ページを追加" aria-label="ページを追加"><i data-icon="plus"></i></button></div><div class="footer-detail"><span id="pageCount">1 / 1 ページ</span><span class="footer-divider">|</span><span id="strokeCount">0 ストローク</span><button class="icon-button small" id="pageMenu" aria-label="ページ操作"><i data-icon="more"></i></button></div></footer>
     </main>
+    <button class="board-handle" id="boardHandle" aria-label="道具を開く" aria-expanded="false" aria-controls="boardControls"><i data-icon="pen"></i></button>
   </div>
   <div id="popover" class="popover" hidden></div>
   <dialog id="dialog" class="app-dialog"><div class="dialog-heading"><div><span class="dialog-eyebrow" id="dialogEyebrow">KOKUBAN</span><h2 id="dialogTitle"></h2></div><button class="icon-button" id="closeDialog" aria-label="閉じる"><i data-icon="close"></i></button></div><div id="dialogBody"></div></dialog>

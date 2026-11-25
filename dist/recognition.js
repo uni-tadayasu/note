@@ -143,7 +143,11 @@ async function getEngine(language, signal) {
   if (engine && engineLanguage === languages) return engine;
   if (engine || enginePromise) await releaseRecognitionResources();
   const stamp = generation;
-  const { createWorker } = await import('./vendor/ocr/tesseract.esm.min.js');
+  // The pinned browser ESM build exposes the Tesseract API as its default
+  // export (unlike the package's Node entry point, which has named exports).
+  const runtime = await import('./vendor/ocr/tesseract.esm.min.js');
+  const createWorker = runtime.default?.createWorker ?? runtime.createWorker;
+  if (typeof createWorker !== 'function') throw failure('文字認識エンジンの読み込みに失敗しました。ページを再読み込みして、もう一度お試しください。', 'ENGINE_MODULE_ERROR');
   checkAbort(signal);
   progress('文字認識エンジンを読み込んでいます…', 0.06);
   enginePromise = createWorker(languages, 1, {
@@ -190,6 +194,7 @@ export async function recognizeHandwriting({ canvas, strokes = [], language = 'j
   busy = true;
   clearTimeout(idleTimer);
   reportProgress = onProgress;
+  let phase = 'native';
   try {
     progress('手書き文字を確認しています…', 0.02);
     const native = await nativeRecognition(strokes, language, signal);
@@ -198,9 +203,12 @@ export async function recognizeHandwriting({ canvas, strokes = [], language = 'j
       return native;
     }
     checkAbort(signal);
+    phase = 'image';
     const prepared = prepareRecognitionImage(canvas);
+    phase = 'engine';
     const worker = await getEngine(language, signal);
     checkAbort(signal);
+    phase = 'recognize';
     const result = await bounded(worker.recognize(prepared, {}, { text: true }), signal, 60000, '文字認識に時間がかかっています。短い文章に分けてお試しください。');
     checkAbort(signal);
     const text = (result.data?.text || '').replace(/\r\n?/g, '\n').trim();
@@ -214,8 +222,18 @@ export async function recognizeHandwriting({ canvas, strokes = [], language = 'j
     };
   } catch (error) {
     if (error.code !== 'EMPTY' && error.code !== 'NO_TEXT') await releaseRecognitionResources();
+    if (error.name !== 'AbortError' && !['EMPTY', 'NO_TEXT'].includes(error.code)) {
+      // Deliberately exclude ink, recognized text and image data from logs.
+      console.error('[黒板 OCR] 文字認識を完了できませんでした。', {
+        phase,
+        name: typeof error.name === 'string' ? error.name.slice(0, 60) : 'Error',
+        code: typeof error.code === 'string' ? error.code.slice(0, 60) : 'ENGINE_ERROR',
+      });
+    }
     if (error.name === 'AbortError' || error.code) throw error;
-    throw failure('文字認識を準備できませんでした。通信を確認して再試行してください。手書きはそのまま保存されています。', 'ENGINE_ERROR');
+    const wrapped = failure('文字認識を準備できませんでした。通信を確認して再試行してください。手書きはそのまま保存されています。', 'ENGINE_ERROR');
+    wrapped.cause = error;
+    throw wrapped;
   } finally {
     busy = false;
     reportProgress = undefined;

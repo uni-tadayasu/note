@@ -77,7 +77,7 @@ function unique(items, label) {
 }
 function budget() { return { pages: 0, points: 0, textCharacters: 0 }; }
 
-function sanitizeStroke(value, totals) {
+function sanitizeStroke(value, totals, pageWidth, pageHeight) {
   const stroke = object(value, '手書き');
   const points = array(stroke.points, '手書きの点', LIMITS.totalPoints, 1);
   totals.points += points.length;
@@ -91,15 +91,15 @@ function sanitizeStroke(value, totals) {
     points: points.map(value => {
       const point = object(value, '手書きの点');
       return {
-        x: number(point.x, '手書きの横位置', 0, 1400),
-        y: number(point.y, '手書きの縦位置', 0, 900),
+        x: number(point.x, '手書きの横位置', 0, pageWidth),
+        y: number(point.y, '手書きの縦位置', 0, pageHeight),
         p: number(point.p === undefined ? 0.5 : point.p, '筆圧', 0, 1),
         t: number(point.t === undefined ? 0 : point.t, '手書きの時刻', 0, Number.MAX_SAFE_INTEGER),
       };
     }),
   };
 }
-function sanitizeText(value, totals) {
+function sanitizeText(value, totals, pageWidth, pageHeight) {
   const text = object(value, 'テキスト');
   const content = string(text.text, 'テキスト', 200000);
   const reading = own(text, 'reading') ? string(text.reading, '読み方', 200000) : undefined;
@@ -108,9 +108,9 @@ function sanitizeText(value, totals) {
   const output = {
     id: id(text.id, 'テキストの識別番号'),
     text: content,
-    x: number(text.x, 'テキストの横位置', 0, 1400),
-    y: number(text.y, 'テキストの縦位置', 0, 900),
-    width: number(text.width, 'テキストの幅', 1, 1400),
+    x: number(text.x, 'テキストの横位置', 0, pageWidth),
+    y: number(text.y, 'テキストの縦位置', 0, pageHeight),
+    width: number(text.width, 'テキストの幅', 1, pageWidth),
     size: number(text.size, '文字の大きさ', 1, 300),
     color: color(text.color, '文字の色'),
     font: enumeration(text.font, FONTS, '文字の書体', 'chalk'),
@@ -122,12 +122,18 @@ function sanitizePage(value, totals) {
   const page = object(value, 'ページ');
   totals.pages += 1;
   if (totals.pages > LIMITS.totalPages) throw invalid('ページは合計10,000ページまで読み込めます。');
+  // Earlier backups used the fixed 1400×900 board. Missing dimensions retain
+  // that coordinate system; adding viewport-sized pages never rescales old ink.
+  const width = number(page.width === undefined ? 1400 : page.width, 'ページの幅', 64, 16384);
+  const height = number(page.height === undefined ? 900 : page.height, 'ページの高さ', 64, 16384);
   return {
     id: id(page.id, 'ページの識別番号'),
+    width,
+    height,
     template: enumeration(page.template, TEMPLATES, 'ページの罫線', 'dots'),
     theme: enumeration(page.theme, THEMES, '黒板の色', 'green'),
-    strokes: unique(array(page.strokes, 'ページ内の手書き', LIMITS.strokesPerPage).map(stroke => sanitizeStroke(stroke, totals)), '手書き'),
-    texts: unique(array(page.texts, 'ページ内のテキスト', LIMITS.textsPerPage).map(text => sanitizeText(text, totals)), 'テキスト'),
+    strokes: unique(array(page.strokes, 'ページ内の手書き', LIMITS.strokesPerPage).map(stroke => sanitizeStroke(stroke, totals, width, height)), '手書き'),
+    texts: unique(array(page.texts, 'ページ内のテキスト', LIMITS.textsPerPage).map(text => sanitizeText(text, totals, width, height)), 'テキスト'),
   };
 }
 function sanitizeNote(value, totals = budget()) {
@@ -150,6 +156,8 @@ function sanitizeNote(value, totals = budget()) {
 function sanitizeSettings(value) {
   const settings = object(value, '設定');
   const speech = settings.speech === undefined ? {} : object(settings.speech, '読み上げ設定');
+  const boardLayoutVersion = number(settings.boardLayoutVersion === undefined ? 0 : settings.boardLayoutVersion, '黒板レイアウトのバージョン', 0, 10);
+  if (!Number.isInteger(boardLayoutVersion)) throw invalid('黒板レイアウトのバージョンを確認してください。');
   return {
     folders: unique(array(settings.folders === undefined ? [] : settings.folders, 'フォルダ', 500).map(value => {
       const folder = object(value, 'フォルダ');
@@ -174,6 +182,7 @@ function sanitizeSettings(value) {
     theme: enumeration(settings.theme, THEMES, '黒板の既定の色', 'green'),
     template: enumeration(settings.template, TEMPLATES, 'ページの既定の罫線', 'dots'),
     lastNoteId: id(settings.lastNoteId === undefined ? '' : settings.lastNoteId, '前回開いたノートの識別番号', true),
+    boardLayoutVersion,
   };
 }
 

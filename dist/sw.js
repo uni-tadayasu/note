@@ -1,5 +1,5 @@
 /* Offline shell and optional on-device OCR assets. Paths remain within this app's scope. */
-const CACHE_VERSION = 'kokuban-v1-20261125';
+const CACHE_VERSION = 'kokuban-v2-20261125';
 const SCOPE = new URL(self.registration.scope);
 const SCOPE_ID = encodeURIComponent(SCOPE.pathname);
 const CORE_CACHE = `${CACHE_VERSION}-core-${SCOPE_ID}`;

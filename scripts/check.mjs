@@ -120,7 +120,7 @@ try {
   assert(manifest.short_name === '黒板' && /^黒板(?:\s|—|$)/u.test(manifest.name || ''), 'Manifest names must use 黒板.');
   assert(manifest.lang === 'ja', 'Manifest lang must be ja.');
   assert(manifest.start_url === './' && manifest.scope === './' && manifest.id === './', 'Manifest must preserve the relative /note/ app scope.');
-  assert(manifest.display === 'standalone', 'Manifest display must be standalone.');
+  assert(['standalone', 'fullscreen'].includes(manifest.display), 'Manifest display must use an app mode: fullscreen or standalone.');
   assert(Array.isArray(manifest.icons) && manifest.icons.length >= 2, 'Manifest needs app icons.');
   for (const icon of manifest.icons || []) await requireAsset(icon.src, path.join(dist, 'manifest.webmanifest'), 'manifest icon');
   assert(manifest.icons?.some(icon => icon.sizes === '192x192'), 'Missing 192×192 manifest icon.');

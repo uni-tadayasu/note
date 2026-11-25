@@ -119,7 +119,32 @@ export class InkEngine {
   setSize(size) { this.size = clamp(finite(size, 4), 0.5, 80); }
   setPenOnly(value) { this.penOnly = Boolean(value); }
   setZoom(value) { this.zoom = clamp(finite(value, 1), 0.25, 6); this.resize(); }
+  setViewport(width, height) {
+    const nextWidth = clamp(finite(width, this.width), 64, 16384);
+    const nextHeight = clamp(finite(height, this.height), 64, 16384);
+    if (nextWidth === this.width && nextHeight === this.height) return;
+    // Commit to the old page coordinates before the host changes its mapping.
+    // Saved paths are never rescaled or clipped when the visible viewport changes.
+    this._finish();
+    this.width = nextWidth; this.height = nextHeight;
+    this.clearSelection();
+    this.resize();
+    // The CSS pixel dimensions can stay identical while logical dimensions change.
+    // Repaint in that case too, without replacing paths or clearing history.
+    this._rebuild();
+  }
   getStrokes() { return this.strokes.slice(); }
+  getContentBounds() {
+    if (!this.strokes.length) return null;
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const stroke of this.strokes) {
+      const bounds = this._bounds(stroke);
+      left = Math.min(left, bounds.x); top = Math.min(top, bounds.y);
+      right = Math.max(right, bounds.x + bounds.width); bottom = Math.max(bottom, bounds.y + bounds.height);
+    }
+    // Include the full pressure-safe stroke padding, even outside the viewport.
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }
   finishStroke() { this._finish(); }
   get canUndo() { return this.history.length > 0; }
   get canRedo() { return this.future.length > 0; }
@@ -442,7 +467,9 @@ export class InkEngine {
     const canvas = this.exportCanvas({ background: '#ffffff', inkColor: '#161616', crop: true, selectionOnly, scale: 1.5, padding: 32 });
     // Native stroke APIs cannot clip a path at a rectangle edge. Use the clipped
     // raster for selected ranges so text outside the range is never recognized.
-    const nativeStrokes = selectionOnly ? [] : strokes.filter(s => ['pen', 'marker'].includes(s.tool)).map(s => ({ ...s, points: s.points.map(p => ({ ...p, x: (p.x - bounds.x) * 1.5, y: (p.y - bounds.y) * 1.5 })) }));
+    const imageScaleX = canvas.width / bounds.width, imageScaleY = canvas.height / bounds.height;
+    const pathsContained = strokes.every(s => s.points.every(p => p.x >= bounds.x && p.x <= bounds.x + bounds.width && p.y >= bounds.y && p.y <= bounds.y + bounds.height));
+    const nativeStrokes = selectionOnly || !pathsContained ? [] : strokes.filter(s => ['pen', 'marker'].includes(s.tool)).map(s => ({ ...s, points: s.points.map(p => ({ ...p, x: (p.x - bounds.x) * imageScaleX, y: (p.y - bounds.y) * imageScaleY })) }));
     return { canvas, strokes: nativeStrokes, bounds };
   }
   destroy() {

@@ -15,7 +15,7 @@ export const defaultSettings = {
   size: 4,
   tool: 'pen',
   theme: 'green',
-  template: 'dots',
+  template: 'blank',
 };
 
 const text = (value, x, y, width, size, color = C.white, font = 'chalk') => ({ id: id('text'), text: value, x, y, width, size, color, font });
